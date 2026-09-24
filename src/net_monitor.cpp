@@ -34,12 +34,15 @@ int event_priority(EVENT kind) {
     switch (kind) {
         case EVENT::IP_CONFLICT:
         case EVENT::MAC_CHANGED:
+        case EVENT::DHCP_MULTIPLE_SERVERS:
+        case EVENT::DHCP_SHARED_CLIENT_ID:
             return LOG_WARNING;
         case EVENT::HOST_LOST:
         case EVENT::CONFLICT_RESOLVED:
             return LOG_NOTICE;
         case EVENT::NEW_HOST:
         case EVENT::HOST_BACK:
+        case EVENT::DHCP_SERVER:
             break;
     }
     return LOG_INFO;
@@ -54,6 +57,20 @@ NetMonitor::NetMonitor(Config config) : m_config{std::move(config)}, m_inventory
     } else {
         syslog(LOG_INFO, "Загружена база производителей %s: %zu записей", m_config.oui_file.c_str(), n);
     }
+    if (m_config.dhcp_watch) {
+        m_dhcp = std::make_unique<DhcpWatcher>(m_config, &m_oui, [this](std::vector<Event> const &events) { add_events(events); });
+    }
+}
+
+void NetMonitor::add_events(std::vector<Event> const &events) {
+    std::lock_guard const lock{m_mutex};
+    for (auto const &e : events) {
+        syslog(event_priority(e.kind), "%s", e.text.c_str());
+        m_events.push_back(e);
+        if (m_events.size() > MAX_EVENTS) {
+            m_events.pop_front();
+        }
+    }
 }
 
 NetMonitor::~NetMonitor() { stop(); }
@@ -62,9 +79,15 @@ void NetMonitor::start(std::function<void()> on_scan) {
     m_on_scan = std::move(on_scan);
     m_thread = std::jthread{[this](std::stop_token st) { run(st); }};
     m_resolver = std::jthread{[this](std::stop_token st) { run_resolver(st); }};
+    if (m_dhcp) {
+        m_dhcp->start();
+    }
 }
 
 void NetMonitor::stop() {
+    if (m_dhcp) {
+        m_dhcp->stop();
+    }
     m_thread.request_stop();
     m_resolver.request_stop();
     m_cv.notify_all();
@@ -124,14 +147,15 @@ void NetMonitor::scan_once() {
             gw = it->second;
         }
 
-        std::lock_guard const lock{m_mutex};
-        for (auto const &e : m_inventory.update(target.iface, res.hosts, gw, std::chrono::system_clock::now())) {
-            syslog(event_priority(e.kind), "%s", e.text.c_str());
-            m_events.push_back(e);
-            if (m_events.size() > MAX_EVENTS) {
-                m_events.pop_front();
-            }
+        std::vector<Event> events;
+        {
+            std::lock_guard const lock{m_mutex};
+            events = m_inventory.update(target.iface, res.hosts, gw, std::chrono::system_clock::now());
         }
+        add_events(events);
+    }
+    if (m_dhcp) {
+        m_dhcp->set_interfaces(targets);
     }
 
     {
@@ -187,6 +211,7 @@ void NetMonitor::resolve_pending(std::stop_token const &st) {
 }
 
 NetSnapshot NetMonitor::snapshot() const {
+    auto dhcp = m_dhcp ? m_dhcp->snapshot() : DhcpSnapshot{};
     std::lock_guard const lock{m_mutex};
-    return {m_inventory.hosts(), {m_events.begin(), m_events.end()}, m_warnings, m_targets, m_last_scan, m_scans};
+    return {m_inventory.hosts(), {m_events.begin(), m_events.end()}, m_warnings, m_targets, m_last_scan, m_scans, std::move(dhcp)};
 }

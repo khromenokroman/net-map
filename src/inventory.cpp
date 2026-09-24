@@ -31,9 +31,15 @@ std::string_view event_name(EVENT kind) {
         case EVENT::IP_CONFLICT:
             return "ip_conflict";
         case EVENT::CONFLICT_RESOLVED:
+            return "conflict_resolved";
+        case EVENT::DHCP_SERVER:
+            return "dhcp_server";
+        case EVENT::DHCP_MULTIPLE_SERVERS:
+            return "dhcp_multiple_servers";
+        case EVENT::DHCP_SHARED_CLIENT_ID:
             break;
     }
-    return "conflict_resolved";
+    return "dhcp_shared_client_id";
 }
 
 Inventory::Inventory(std::chrono::seconds host_timeout, OuiDb const *oui) : m_timeout{host_timeout}, m_oui{oui} {}

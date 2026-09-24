@@ -25,7 +25,9 @@ add_library(${PROJECT_NAME}-core STATIC
         src/arp_packet.cpp
         src/arp_scanner.cpp
         src/config.cpp
+        src/dhcp_inventory.cpp
         src/dhcp_packet.cpp
+        src/dhcp_watcher.cpp
         src/index_page.cpp
         src/ipv4.cpp
         src/inventory.cpp
@@ -51,6 +53,7 @@ if (BUILD_TESTS)
             tests/api_test.cpp
             tests/arp_test.cpp
             tests/config_test.cpp
+            tests/dhcp_inventory_test.cpp
             tests/dhcp_packet_test.cpp
             tests/inventory_test.cpp
             tests/ipv4_test.cpp

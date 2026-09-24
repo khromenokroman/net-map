@@ -25,6 +25,16 @@ void read_int(nlohmann::json const &j, std::string_view key, T &out, T min, T ma
     out = static_cast<T>(value);
 }
 
+void read_bool(nlohmann::json const &j, std::string_view key, bool &out) {
+    if (!j.contains(key)) {
+        return;
+    }
+    if (!j.at(key).is_boolean()) {
+        throw std::runtime_error(fmt::format("Поле \"{}\" должно быть true или false", key));
+    }
+    out = j.at(key).get<bool>();
+}
+
 } // namespace
 
 Config parse_config(nlohmann::json const &j) {
@@ -51,6 +61,9 @@ Config parse_config(nlohmann::json const &j) {
     read_int(j, "host_timeout_sec", cfg.host_timeout_sec, 10, 30 * 86400);
     read_int(j, "arp_timeout_ms", cfg.arp_timeout_ms, 100, 10000);
     read_int(j, "max_hosts", cfg.max_hosts, std::uint64_t{1}, std::uint64_t{65536});
+    read_int(j, "dhcp_probe_interval_sec", cfg.dhcp_probe_interval_sec, 60, 86400);
+    read_bool(j, "dhcp_watch", cfg.dhcp_watch);
+    read_bool(j, "dhcp_probe", cfg.dhcp_probe);
 
     if (j.contains("interfaces")) {
         auto const &ifs = j.at("interfaces");

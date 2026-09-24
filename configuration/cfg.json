@@ -7,5 +7,8 @@
   "host_timeout_sec": 600,
   "arp_timeout_ms": 1000,
   "max_hosts": 4096,
-  "oui_file": "/usr/share/ieee-data/oui.txt"
+  "oui_file": "/usr/share/ieee-data/oui.txt",
+  "dhcp_watch": true,
+  "dhcp_probe": false,
+  "dhcp_probe_interval_sec": 3600
 }

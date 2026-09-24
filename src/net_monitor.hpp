@@ -4,6 +4,7 @@
 #include <deque>
 #include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <stop_token>
 #include <string>
@@ -11,6 +12,7 @@
 #include <vector>
 
 #include "config.hpp"
+#include "dhcp_watcher.hpp"
 #include "inventory.hpp"
 #include "oui.hpp"
 
@@ -24,6 +26,7 @@ struct NetSnapshot {
     std::vector<NetInterface> targets;               ///< Сканируемые подсети.
     std::chrono::system_clock::time_point last_scan; ///< Когда закончилось последнее сканирование.
     std::uint64_t scans{};                           ///< Число выполненных циклов сканирования.
+    DhcpSnapshot dhcp;                               ///< Состояние DHCP.
 };
 
 /**
@@ -86,6 +89,12 @@ class NetMonitor {
     void queue_names(std::vector<Host> const &hosts);
 
     /**
+     * @brief Добавляет события в журнал и syslog.
+     * @param events События.
+     */
+    void add_events(std::vector<Event> const &events);
+
+    /**
      * @brief Основной цикл потока обратного DNS.
      */
     void run_resolver(std::stop_token const &st);
@@ -104,6 +113,7 @@ class NetMonitor {
     std::map<Ipv4, std::pair<std::string, std::chrono::steady_clock::time_point>> m_dns; // 48
     mutable std::mutex m_mutex;                                                          // 40
     std::function<void()> m_on_scan;                                                     // 32
+    std::unique_ptr<DhcpWatcher> m_dhcp;                                                 // 8
     std::vector<std::string> m_warnings;                                                 // 24
     std::vector<NetInterface> m_targets;                                                 // 24
     std::jthread m_thread;                                                               // 16

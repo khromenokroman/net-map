@@ -14,6 +14,18 @@ TEST(ParseConfig, Defaults) {
     EXPECT_EQ(cfg.max_hosts, 4096U);
     EXPECT_TRUE(cfg.interfaces.empty());
     EXPECT_EQ(cfg.oui_file, "/usr/share/ieee-data/oui.txt");
+    EXPECT_TRUE(cfg.dhcp_watch);
+    EXPECT_FALSE(cfg.dhcp_probe);
+    EXPECT_EQ(cfg.dhcp_probe_interval_sec, 3600);
+}
+
+TEST(ParseConfig, Dhcp) {
+    auto const cfg = parse_config(json::parse(R"({"dhcp_watch": false, "dhcp_probe": true, "dhcp_probe_interval_sec": 600})"));
+    EXPECT_FALSE(cfg.dhcp_watch);
+    EXPECT_TRUE(cfg.dhcp_probe);
+    EXPECT_EQ(cfg.dhcp_probe_interval_sec, 600);
+    EXPECT_THROW((void)parse_config(json::parse(R"({"dhcp_probe": 1})")), std::runtime_error);
+    EXPECT_THROW((void)parse_config(json::parse(R"({"dhcp_probe_interval_sec": 10})")), std::runtime_error);
 }
 
 TEST(ParseConfig, Values) {

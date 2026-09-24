@@ -16,12 +16,15 @@
  * @brief Вид события в сети.
  */
 enum class EVENT {
-    NEW_HOST,          ///< Появился новый хост.
-    HOST_LOST,         ///< Хост перестал отвечать дольше host_timeout.
-    HOST_BACK,         ///< Пропавший хост снова отвечает.
-    MAC_CHANGED,       ///< IP-адрес теперь отвечает с другого MAC.
-    IP_CONFLICT,       ///< На один IP отвечают несколько MAC.
-    CONFLICT_RESOLVED, ///< Конфликт IP-адреса пропал.
+    NEW_HOST,              ///< Появился новый хост.
+    HOST_LOST,             ///< Хост перестал отвечать дольше host_timeout.
+    HOST_BACK,             ///< Пропавший хост снова отвечает.
+    MAC_CHANGED,           ///< IP-адрес теперь отвечает с другого MAC.
+    IP_CONFLICT,           ///< На один IP отвечают несколько MAC.
+    CONFLICT_RESOLVED,     ///< Конфликт IP-адреса пропал.
+    DHCP_SERVER,           ///< Обнаружен DHCP-сервер.
+    DHCP_MULTIPLE_SERVERS, ///< В сегменте отвечают несколько DHCP-серверов.
+    DHCP_SHARED_CLIENT_ID, ///< Один DHCP Client-ID у нескольких MAC.
 };
 
 /**
