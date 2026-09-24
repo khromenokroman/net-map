@@ -2,6 +2,8 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
+
 namespace {
 
 NetInterface make(std::string name, std::string_view addr, std::uint8_t prefix, bool up = true, bool arp = true) {
