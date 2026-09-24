@@ -109,7 +109,8 @@ td.muted { color: var(--muted); }
 .st.ok { --c: var(--ok); color: var(--ok); } .st.off { --c: var(--off); color: var(--muted); } .st.fail { --c: var(--fail); color: var(--fail); }
 .tag { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 6px; border-radius: 6px; margin-left: 6px;
   color: var(--accent); background: var(--off-bg); }
-.events { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); max-height: 360px; overflow-y: auto; }
+.events { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+.ev.unread { box-shadow: inset 3px 0 0 var(--accent); }
 .ev { display: flex; gap: 12px; padding: 8px 14px; border-bottom: 1px solid var(--border); font-size: 13px; }
 .ev:last-child { border-bottom: none; }
 .ev time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; width: 118px; }
@@ -150,6 +151,7 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
   <nav class="tabs" role="tablist">
     <button class="tab active" type="button" role="tab" data-tab="net">Карта и хосты</button>
     <button class="tab" type="button" role="tab" data-tab="dhcp">DHCP <span class="badge" id="dhcp-badge">0</span></button>
+    <button class="tab" type="button" role="tab" data-tab="events">События <span class="badge" id="ev-badge">0</span></button>
   </nav>
 
   <div class="tabpane" id="tab-net">
@@ -175,8 +177,19 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
     </table>
   </div>
 
-  <h2>События</h2>
-  <div class="events" id="events"></div>
+  </div>
+
+  <div class="tabpane" id="tab-events" hidden>
+    <div class="toolbar">
+      <input id="ev-search" type="search" placeholder="Поиск по тексту события, IP, MAC…" autocomplete="off">
+      <div class="chips" id="ev-chips">
+        <button class="chip active" data-f="all">Все</button>
+        <button class="chip" data-f="warn">Предупреждения</button>
+        <button class="chip" data-f="hosts">Хосты</button>
+        <button class="chip" data-f="dhcp">DHCP</button>
+      </div>
+    </div>
+    <div class="events" id="events"></div>
   </div>
 
   <div class="tabpane" id="tab-dhcp" hidden>
@@ -344,7 +357,7 @@ function select(h) {
   selected = h.ip + "|" + h.mac;
   $("search").value = h.ip;
   filter = "all";
-  for (const c of document.querySelectorAll(".chip")) c.classList.toggle("active", c.dataset.f === "all");
+  for (const c of document.querySelectorAll("#chips .chip")) c.classList.toggle("active", c.dataset.f === "all");
   renderTable();
   const row = document.querySelector("tr.sel");
   if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -457,14 +470,40 @@ function renderDhcp() {
                           : el("div", "empty", "DHCP-запросы клиентов пока не замечены"));
   box.replaceChildren(...parts);
 }
+const WARN_KINDS = new Set(["ip_conflict", "mac_changed", "dhcp_multiple_servers", "dhcp_shared_client_id"]);
+let evFilter = "all", evSeen = 0;
+try { evSeen = +(localStorage.getItem("netmap-events-seen") || 0); } catch (e) {}
+
+function evMatch(e, q) {
+  const f = evFilter === "all" || (evFilter === "warn" && WARN_KINDS.has(e.kind)) || (evFilter === "dhcp" && e.kind.startsWith("dhcp")) ||
+            (evFilter === "hosts" && !e.kind.startsWith("dhcp"));
+  return f && (!q || [e.text, e.ip, e.mac].some(v => v.toLowerCase().includes(q)));
+}
+
+function markEventsSeen() {
+  const last = data && data.events.length ? data.events[data.events.length - 1].time : 0;
+  if (last > evSeen) {
+    evSeen = last;
+    try { localStorage.setItem("netmap-events-seen", String(evSeen)); } catch (e) {}
+  }
+}
+
 function renderEvents() {
-  const list = data.events.slice().reverse().map(e => {
-    const r = el("div", "ev " + (EV_CLASS[e.kind] || ""));
+  if (!evSeen && data.events.length) markEventsSeen();
+  const unread = data.events.filter(e => e.time > evSeen), badge = $("ev-badge");
+  badge.textContent = unread.length ? "+" + unread.length : data.events.length;
+  badge.className = "badge" + (unread.some(e => WARN_KINDS.has(e.kind)) ? " fail" : "");
+  badge.title = unread.length ? "Новых событий: " + unread.length : "Всего событий";
+
+  const q = $("ev-search").value.trim().toLowerCase();
+  const list = data.events.filter(e => evMatch(e, q)).reverse().map(e => {
+    const r = el("div", "ev " + (EV_CLASS[e.kind] || "") + (e.time > evSeen ? " unread" : ""));
     r.append(el("time", "", clock(e.time)), el("span", "", e.text));
     return r;
   });
   $("events").replaceChildren(...list);
-  if (!list.length) $("events").append(el("div", "empty", "Событий пока нет"));
+  if (!list.length) $("events").append(el("div", "empty", data.events.length ? "Нет событий, подходящих под фильтр" : "Событий пока нет"));
+  if (!$("tab-events").hidden && !document.hidden) setTimeout(markEventsSeen, 3000);
 }
 
 function render() {
@@ -503,10 +542,10 @@ async function refresh() {
   timer = setTimeout(refresh, interval * 1000);
 }
 
-for (const c of document.querySelectorAll(".chip")) {
+for (const c of document.querySelectorAll("#chips .chip")) {
   c.addEventListener("click", () => {
     filter = c.dataset.f;
-    for (const o of document.querySelectorAll(".chip")) o.classList.toggle("active", o === c);
+    for (const o of document.querySelectorAll("#chips .chip")) o.classList.toggle("active", o === c);
     if (data) renderTable();
   });
 }
@@ -518,14 +557,16 @@ for (const th of document.querySelectorAll("#thead th")) {
   });
 }
 function showTab(name, remember) {
-  if (name !== "net" && name !== "dhcp") name = "net";
+  if (!["net", "dhcp", "events"].includes(name)) name = "net";
   for (const t of document.querySelectorAll(".tab")) {
     t.classList.toggle("active", t.dataset.tab === name);
     t.setAttribute("aria-selected", String(t.dataset.tab === name));
   }
   $("tab-net").hidden = name !== "net";
   $("tab-dhcp").hidden = name !== "dhcp";
+  $("tab-events").hidden = name !== "events";
   if (name === "net") centerMaps();
+  if (name === "events" && data) renderEvents();
   if (remember) {
     history.replaceState(null, "", name === "net" ? location.pathname : "#" + name);
     try { localStorage.setItem("netmap-tab", name); } catch (e) {}
@@ -540,6 +581,14 @@ window.addEventListener("hashchange", () => showTab(location.hash.slice(1), fals
   showTab(tab, false);
 }
 $("search").addEventListener("input", () => { selected = ""; if (data) renderTable(); });
+$("ev-search").addEventListener("input", () => { if (data) renderEvents(); });
+for (const c of document.querySelectorAll("#ev-chips .chip")) {
+  c.addEventListener("click", () => {
+    evFilter = c.dataset.f;
+    for (const o of document.querySelectorAll("#ev-chips .chip")) o.classList.toggle("active", o === c);
+    if (data) renderEvents();
+  });
+}
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 refresh();
 </script>
