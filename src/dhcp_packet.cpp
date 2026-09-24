@@ -45,6 +45,12 @@ void put32(std::vector<std::uint8_t> &v, std::size_t at, std::uint32_t x) {
     put16(v, at + 2, static_cast<std::uint16_t>(x));
 }
 
+void add_option(std::vector<std::uint8_t> &opts, std::uint8_t code, std::initializer_list<std::uint8_t> value) {
+    opts.push_back(code);
+    opts.push_back(static_cast<std::uint8_t>(value.size()));
+    opts.insert(opts.end(), value);
+}
+
 std::uint16_t ip_checksum(std::uint8_t const *p, std::size_t len) {
     std::uint32_t sum = 0;
     for (std::size_t i = 0; i + 1 < len; i += 2) {
@@ -179,16 +185,11 @@ std::optional<DhcpFrame> parse_dhcp_frame(std::span<std::uint8_t const> frame) {
 }
 
 std::vector<std::uint8_t> build_dhcp_discover(Mac const &src_mac, Mac const &chaddr, std::uint32_t xid) {
-    std::vector<std::uint8_t> opts{
-        53,  1,   static_cast<std::uint8_t>(DHCP_TYPE::DISCOVER), // тип сообщения
-        55,  5,   1,
-        3,   6,   51,
-        54, // запрашиваемые параметры
-        60,  7,   'n',
-        'e', 't', '-',
-        'm', 'a', 'p', // vendor class
-        255,
-    };
+    std::vector<std::uint8_t> opts;
+    add_option(opts, 53, {static_cast<std::uint8_t>(DHCP_TYPE::DISCOVER)});
+    add_option(opts, 55, {1, 3, 6, 51, 54});
+    add_option(opts, 60, {'n', 'e', 't', '-', 'm', 'a', 'p'});
+    opts.push_back(255);
     auto const bootp_len = BOOTP_SIZE + 4 + opts.size();
     auto const udp_len = UDP_SIZE + bootp_len;
     auto const ip_len = 20 + udp_len;
