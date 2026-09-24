@@ -65,16 +65,30 @@ class NetMonitor {
     void scan_once();
 
     /**
+     * @brief Определяет имена хостов из очереди обратного DNS в текущем потоке.
+     * @param st Признак остановки; обработка прерывается между запросами.
+     */
+    void resolve_pending(std::stop_token const &st = {});
+
+    /**
      * @brief Возвращает текущее состояние сети.
      */
     [[nodiscard]] NetSnapshot snapshot() const;
 
    private:
     /**
-     * @brief Определяет имена хостов через обратный DNS (с кэшем).
-     * @param hosts Хосты, для которых нужно имя.
+     * @brief Подставляет известные имена хостов и ставит в очередь обратного DNS остальные.
+     *
+     * Вызывается под m_mutex.
+     *
+     * @param hosts Хосты после сканирования.
      */
-    void resolve_names(std::vector<Host> const &hosts);
+    void queue_names(std::vector<Host> const &hosts);
+
+    /**
+     * @brief Основной цикл потока обратного DNS.
+     */
+    void run_resolver(std::stop_token const &st);
 
     /**
      * @brief Основной цикл фонового потока.
@@ -84,6 +98,7 @@ class NetMonitor {
     Config m_config;                                                                     // 120
     Inventory m_inventory;                                                               // 112
     std::deque<Event> m_events;                                                          // 80
+    std::deque<Ipv4> m_dns_queue;                                                        // 80
     std::condition_variable_any m_cv;                                                    // 64
     OuiDb m_oui;                                                                         // 56
     std::map<Ipv4, std::pair<std::string, std::chrono::steady_clock::time_point>> m_dns; // 48
@@ -92,6 +107,7 @@ class NetMonitor {
     std::vector<std::string> m_warnings;                                                 // 24
     std::vector<NetInterface> m_targets;                                                 // 24
     std::jthread m_thread;                                                               // 16
+    std::jthread m_resolver;                                                             // 16
     std::chrono::system_clock::time_point m_last_scan;                                   // 8
     std::uint64_t m_scans{};                                                             // 8
 };

@@ -5,7 +5,9 @@
 #include <sys/socket.h>
 #include <syslog.h>
 
+#include <algorithm>
 #include <array>
+#include <future>
 
 #include "arp_scanner.hpp"
 #include "route.hpp"
@@ -14,6 +16,7 @@ namespace {
 
 constexpr std::size_t MAX_EVENTS = 500;
 constexpr auto DNS_TTL = std::chrono::minutes{10};
+constexpr std::size_t DNS_PARALLEL = 8;
 
 std::string reverse_dns(Ipv4 ip) {
     sockaddr_in sa{};
@@ -57,13 +60,28 @@ NetMonitor::~NetMonitor() { stop(); }
 void NetMonitor::start(std::function<void()> on_scan) {
     m_on_scan = std::move(on_scan);
     m_thread = std::jthread{[this](std::stop_token st) { run(st); }};
+    m_resolver = std::jthread{[this](std::stop_token st) { run_resolver(st); }};
 }
 
 void NetMonitor::stop() {
+    m_thread.request_stop();
+    m_resolver.request_stop();
+    m_cv.notify_all();
     if (m_thread.joinable()) {
-        m_thread.request_stop();
-        m_cv.notify_all();
         m_thread.join();
+    }
+    if (m_resolver.joinable()) {
+        m_resolver.join();
+    }
+}
+
+void NetMonitor::run_resolver(std::stop_token const &st) {
+    while (!st.stop_requested()) {
+        {
+            std::unique_lock lock{m_mutex};
+            m_cv.wait(lock, st, [this] { return !m_dns_queue.empty(); });
+        }
+        resolve_pending(st);
     }
 }
 
@@ -115,36 +133,55 @@ void NetMonitor::scan_once() {
         }
     }
 
-    std::vector<Host> hosts;
     {
         std::lock_guard const lock{m_mutex};
         m_warnings = std::move(warnings);
         m_targets = std::move(targets);
         m_last_scan = std::chrono::system_clock::now();
         ++m_scans;
-        hosts = m_inventory.hosts();
+        queue_names(m_inventory.hosts());
     }
-    resolve_names(hosts);
+    m_cv.notify_all();
 }
 
-void NetMonitor::resolve_names(std::vector<Host> const &hosts) {
+void NetMonitor::queue_names(std::vector<Host> const &hosts) {
     auto const now = std::chrono::steady_clock::now();
     for (auto const &h : hosts) {
-        if (!h.online) {
-            continue;
+        auto const it = m_dns.find(h.ip);
+        if (it != m_dns.end()) {
+            m_inventory.set_hostname(h.ip, it->second.first);
         }
+        auto const fresh = it != m_dns.end() && now - it->second.second < DNS_TTL;
+        if (h.online && !fresh && std::ranges::find(m_dns_queue, h.ip) == m_dns_queue.end()) {
+            m_dns_queue.push_back(h.ip);
+        }
+    }
+}
+
+void NetMonitor::resolve_pending(std::stop_token const &st) {
+    while (!st.stop_requested()) {
+        std::vector<Ipv4> batch;
         {
             std::lock_guard const lock{m_mutex};
-            auto const it = m_dns.find(h.ip);
-            if (it != m_dns.end() && now - it->second.second < DNS_TTL) {
-                m_inventory.set_hostname(h.ip, it->second.first);
-                continue;
-            }
+            auto const n = std::min(m_dns_queue.size(), DNS_PARALLEL);
+            batch.assign(m_dns_queue.begin(), m_dns_queue.begin() + static_cast<std::ptrdiff_t>(n));
         }
-        auto name = reverse_dns(h.ip);
-        std::lock_guard const lock{m_mutex};
-        m_inventory.set_hostname(h.ip, name);
-        m_dns[h.ip] = {std::move(name), now};
+        if (batch.empty()) {
+            return;
+        }
+        std::vector<std::future<std::string>> names;
+        names.reserve(batch.size());
+        for (auto const ip : batch) {
+            names.push_back(std::async(std::launch::async, reverse_dns, ip));
+        }
+        auto const now = std::chrono::steady_clock::now();
+        for (std::size_t i = 0; i < batch.size(); ++i) {
+            auto name = names[i].get();
+            std::lock_guard const lock{m_mutex};
+            m_inventory.set_hostname(batch[i], name);
+            m_dns[batch[i]] = {std::move(name), now};
+            std::erase(m_dns_queue, batch[i]);
+        }
     }
 }
 

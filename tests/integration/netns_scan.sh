@@ -45,4 +45,31 @@ conflicts=$(echo "$OUT" | grep -E '^  10\.99\.0\.' | grep -c 'КОНФЛИКТ I
 echo "$OUT" | grep -qE '^  10\.99\.0\.50.*КОНФЛИКТ IP' || { echo "конфликт не на 10.99.0.50"; exit 1; }
 echo "$OUT" | grep -qE '^  10\.99\.0\.1\s.*ЭТА МАШИНА' || { echo "нет собственного адреса 10.99.0.1"; exit 1; }
 echo "$OUT" | grep -q 'событие: Конфликт IP 10.99.0.50' || { echo "нет события о конфликте"; exit 1; }
-echo "OK"
+echo "--once: OK"
+
+command -v curl >/dev/null && command -v python3 >/dev/null || { echo "нет curl/python3, проверка веб-сервера пропущена"; exit 0; }
+CFG=$(mktemp)
+echo '{"listen_addr": "127.0.0.1", "port": 18081, "interfaces": ["scan0"], "arp_timeout_ms": 500, "scan_interval_sec": 5}' > "$CFG"
+"$BIN" "$CFG" &
+app=$!
+pids+=("$app")
+for _ in $(seq 1 50); do
+    json=$(curl -sf http://127.0.0.1:18081/api/network || true)
+    [ -n "$json" ] && [ "$(echo "$json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["scans"])')" -ge 1 ] && break
+    sleep 0.2
+done
+rm -f "$CFG"
+echo "$json" | python3 -c '
+import json, sys
+d = json.load(sys.stdin)
+others = [h for h in d["hosts"] if not h["self"]]
+assert len(others) == 5, f"хостов {len(others)}"
+assert len(d["subnets"]) == 1 and d["subnets"][0]["subnet"] == "10.99.0.0/24", d["subnets"]
+conflict = sorted(h["mac"] for h in d["hosts"] if h["conflict"])
+assert len(conflict) == 2 and all(h["ip"] == "10.99.0.50" for h in d["hosts"] if h["conflict"]), conflict
+assert any(e["kind"] == "ip_conflict" for e in d["events"]), d["events"]
+' || { echo "неверный ответ /api/network: $json"; exit 1; }
+curl -sf http://127.0.0.1:18081/ | grep -q "<title>Карта сети</title>" || { echo "страница не отдаётся"; exit 1; }
+kill -TERM "$app"
+wait "$app" || { echo "программа завершилась с ошибкой"; exit 1; }
+echo "веб-сервер: OK"

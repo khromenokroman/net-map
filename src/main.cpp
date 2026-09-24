@@ -7,6 +7,7 @@
 
 #include "config.hpp"
 #include "net_monitor.hpp"
+#include "web_server.hpp"
 
 namespace {
 
@@ -46,12 +47,14 @@ int main(int argc, char *argv[]) {
             }
         }
         auto const cfg = load_config(cfg_path);
+        setenv("RES_OPTIONS", "timeout:1 attempts:1", 0);
         openlog("net-map", LOG_PID | LOG_CONS, LOG_USER);
         setlogmask(LOG_UPTO(cfg.log_level));
 
         if (once) {
             NetMonitor monitor{cfg};
             monitor.scan_once();
+            monitor.resolve_pending();
             print(monitor.snapshot());
             return EXIT_SUCCESS;
         }
@@ -63,9 +66,20 @@ int main(int argc, char *argv[]) {
         pthread_sigmask(SIG_BLOCK, &signals, nullptr);
 
         NetMonitor monitor{cfg};
-        monitor.start([&monitor] { print(monitor.snapshot()); });
-        int sig{};
-        sigwait(&signals, &sig);
+        WebServer server{cfg, monitor};
+        std::jthread signal_thread{[&server, &signals] {
+            int sig{};
+            sigwait(&signals, &sig);
+            server.stop();
+        }};
+        monitor.start();
+        try {
+            server.run();
+        } catch (...) {
+            pthread_kill(signal_thread.native_handle(), SIGTERM);
+            throw;
+        }
+        pthread_kill(signal_thread.native_handle(), SIGTERM);
         monitor.stop();
     } catch (std::exception const &ex) {
         std::cerr << "Ошибка во время выполнения: " << ex.what() << std::endl;
