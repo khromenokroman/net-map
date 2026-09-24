@@ -26,7 +26,8 @@ std::string reverse_dns(Ipv4 ip) {
     if (getnameinfo(reinterpret_cast<sockaddr const *>(&sa), sizeof(sa), host.data(), host.size(), nullptr, 0, NI_NAMEREQD) != 0) {
         return {};
     }
-    return host.data();
+    // Служебные имена nss-myhostname ("_gateway", "_outbound") не являются именами хостов
+    return host[0] == '_' ? std::string{} : std::string{host.data()};
 }
 
 int event_priority(EVENT kind) {

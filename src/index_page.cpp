@@ -206,7 +206,11 @@ function drawMap(subnet, hosts) {
   const rings = [];
   for (let g = 0, k = 0; g < groups.length; k++) {
     const r = R0 + k * RD, cap = Math.max(6, Math.floor(2 * Math.PI * r / SPACING)), items = [];
-    while (g < groups.length && (items.length + groups[g].length <= cap || !items.length)) items.push(...groups[g++]);
+    let count = 0;
+    while (g < groups.length && (count + groups[g].length <= cap || !items.length)) {
+      count += groups[g].length;
+      items.push(groups[g++]);
+    }
     rings.push({ r, items });
   }
   const outer = (rings.length ? rings[rings.length - 1].r : R0) + 60;
@@ -217,9 +221,16 @@ function drawMap(subnet, hosts) {
   svg.append(links, nodes);
 
   rings.forEach((rg, k) => {
-    const n = rg.items.length, off = -Math.PI / 2 + (k % 2 ? Math.PI / n : 0);
-    rg.items.forEach((h, i) => {
-      const a = off + 2 * Math.PI * i / n, x = rg.r * Math.cos(a), y = rg.r * Math.sin(a);
+    const count = rg.items.reduce((n, g) => n + g.length, 0), unit = 2 * Math.PI / count, inner = Math.min(unit, SPACING / rg.r);
+    const placed = [];
+    let cursor = -Math.PI / 2 + (k % 2 ? unit / 2 : 0);
+    for (const group of rg.items) {
+      const center = cursor + unit * (group.length - 1) / 2;
+      group.forEach((h, j) => placed.push([h, center + inner * (j - (group.length - 1) / 2)]));
+      cursor += unit * group.length;
+    }
+    placed.forEach(([h, a]) => {
+      const x = rg.r * Math.cos(a), y = rg.r * Math.sin(a);
       links.append(sv("line", { x1: 0, y1: 0, x2: x.toFixed(1), y2: y.toFixed(1) }, "link" + (h.conflict ? " fail" : "")));
       const cls = status(h) + (h.self ? " self" : "");
       const main = h.hostname || h.vendor || "";
