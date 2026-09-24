@@ -9,7 +9,8 @@
  * @brief Конфигурация приложения.
  */
 struct Config {
-    std::string listen_addr{"0.0.0.0"};    ///< Адрес, на котором слушает HTTP-сервер.
+    std::string listen_addr{"0.0.0.0"};                   ///< Адрес, на котором слушает HTTP-сервер.
+    std::string oui_file{"/usr/share/ieee-data/oui.txt"}; ///< База производителей по MAC (пакет ieee-data).
     std::vector<std::string> interfaces{}; ///< Интерфейсы для сканирования; пусто — все подходящие.
     std::uint64_t max_hosts{4096};         ///< Максимальное число адресов в сканируемой подсети.
     int port{8081};                        ///< Порт HTTP-сервера.

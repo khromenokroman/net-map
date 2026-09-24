@@ -34,13 +34,15 @@ sleep 1
 
 CFG=$(mktemp)
 echo '{"interfaces": ["scan0"], "arp_timeout_ms": 500}' > "$CFG"
-OUT=$("$BIN" "$CFG")
+OUT=$("$BIN" --once "$CFG")
 rm -f "$CFG"
 echo "$OUT"
 
-hosts=$(echo "$OUT" | grep -cE '^  10\.99\.0\.')
-conflicts=$(echo "$OUT" | grep -c 'КОНФЛИКТ IP' || true)
+hosts=$(echo "$OUT" | grep -E '^  10\.99\.0\.' | grep -vc 'ЭТА МАШИНА')
+conflicts=$(echo "$OUT" | grep -E '^  10\.99\.0\.' | grep -c 'КОНФЛИКТ IP' || true)
 [ "$hosts" -eq 5 ] || { echo "ожидалось 5 хостов, найдено $hosts"; exit 1; }
 [ "$conflicts" -eq 2 ] || { echo "ожидалось 2 строки с конфликтом 10.99.0.50, найдено $conflicts"; exit 1; }
-echo "$OUT" | grep -q '10.99.0.50.*КОНФЛИКТ IP' || { echo "конфликт не на 10.99.0.50"; exit 1; }
+echo "$OUT" | grep -qE '^  10\.99\.0\.50.*КОНФЛИКТ IP' || { echo "конфликт не на 10.99.0.50"; exit 1; }
+echo "$OUT" | grep -qE '^  10\.99\.0\.1\s.*ЭТА МАШИНА' || { echo "нет собственного адреса 10.99.0.1"; exit 1; }
+echo "$OUT" | grep -q 'событие: Конфликт IP 10.99.0.50' || { echo "нет события о конфликте"; exit 1; }
 echo "OK"

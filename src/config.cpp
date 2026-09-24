@@ -39,6 +39,12 @@ Config parse_config(nlohmann::json const &j) {
         }
         cfg.listen_addr = j.at("listen_addr").get<std::string>();
     }
+    if (j.contains("oui_file")) {
+        if (!j.at("oui_file").is_string()) {
+            throw std::runtime_error("Поле \"oui_file\" должно быть строкой");
+        }
+        cfg.oui_file = j.at("oui_file").get<std::string>();
+    }
     read_int(j, "port", cfg.port, 1, 65535);
     read_int(j, "log_level", cfg.log_level, 0, 7);
     read_int(j, "scan_interval_sec", cfg.scan_interval_sec, 5, 86400);

@@ -13,6 +13,7 @@ TEST(ParseConfig, Defaults) {
     EXPECT_EQ(cfg.arp_timeout_ms, 1000);
     EXPECT_EQ(cfg.max_hosts, 4096U);
     EXPECT_TRUE(cfg.interfaces.empty());
+    EXPECT_EQ(cfg.oui_file, "/usr/share/ieee-data/oui.txt");
 }
 
 TEST(ParseConfig, Values) {
@@ -26,7 +27,7 @@ TEST(ParseConfig, Values) {
 TEST(ParseConfig, Errors) {
     for (auto const *bad : {R"([])", R"({"port": 0})", R"({"port": "80"})", R"({"port": 1.5})", R"({"log_level": 8})", R"({"scan_interval_sec": 1})",
                             R"({"arp_timeout_ms": 50})", R"({"max_hosts": 0})", R"({"max_hosts": 70000})", R"({"interfaces": "eth0"})",
-                            R"({"interfaces": [""]})", R"({"interfaces": [1]})", R"({"listen_addr": 1})"}) {
+                            R"({"interfaces": [""]})", R"({"interfaces": [1]})", R"({"listen_addr": 1})", R"({"oui_file": false})"}) {
         EXPECT_THROW((void)parse_config(json::parse(bad)), std::runtime_error) << bad;
     }
 }

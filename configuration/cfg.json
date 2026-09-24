@@ -6,5 +6,6 @@
   "scan_interval_sec": 60,
   "host_timeout_sec": 600,
   "arp_timeout_ms": 1000,
-  "max_hosts": 4096
+  "max_hosts": 4096,
+  "oui_file": "/usr/share/ieee-data/oui.txt"
 }

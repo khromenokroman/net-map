@@ -22,7 +22,11 @@ add_library(${PROJECT_NAME}-core STATIC
         src/arp_scanner.cpp
         src/config.cpp
         src/ipv4.cpp
+        src/inventory.cpp
+        src/net_monitor.cpp
         src/netif.cpp
+        src/oui.cpp
+        src/route.cpp
 )
 target_include_directories(${PROJECT_NAME}-core PUBLIC src)
 target_include_directories(${PROJECT_NAME}-core SYSTEM PUBLIC third_party/httplib)
@@ -39,8 +43,10 @@ if (BUILD_TESTS)
     add_executable(${PROJECT_NAME}-tests
             tests/arp_test.cpp
             tests/config_test.cpp
+            tests/inventory_test.cpp
             tests/ipv4_test.cpp
             tests/netif_test.cpp
+            tests/oui_route_test.cpp
     )
     target_link_libraries(${PROJECT_NAME}-tests PRIVATE ${PROJECT_NAME}-core GTest::gtest_main)
     include(GoogleTest)
