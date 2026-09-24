@@ -15,7 +15,10 @@ find_package(Threads REQUIRED)
 
 include(GNUInstallDirs)
 
+set(NET_MAP_CONFIG "/etc/${PROJECT_NAME}/cfg.json")
+
 configure_file(Version.in Version @ONLY)
+configure_file(systemd/${PROJECT_NAME}.service.in ${PROJECT_NAME}.service @ONLY)
 
 add_library(${PROJECT_NAME}-core STATIC
         src/api.cpp
@@ -58,3 +61,13 @@ if (BUILD_TESTS)
     add_test(NAME netns_scan COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/netns_scan.sh $<TARGET_FILE:${PROJECT_NAME}>)
     set_tests_properties(netns_scan PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif ()
+
+install(TARGETS ${PROJECT_NAME}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+)
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}.service
+        DESTINATION lib/systemd/system
+)
+install(FILES configuration/cfg.json
+        DESTINATION ${CMAKE_INSTALL_FULL_SYSCONFDIR}/${PROJECT_NAME}
+)
