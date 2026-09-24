@@ -1,6 +1,7 @@
 #include <cstdlib>
 #include <iostream>
 
+#include "arp_scanner.hpp"
 #include "config.hpp"
 #include "netif.hpp"
 
@@ -13,9 +14,15 @@ int main(int argc, char *argv[]) {
             std::cout << "Пропущено: " << w << "\n";
         }
         for (auto const &t : plan.targets) {
-            std::cout << t.iface.name << " " << t.iface.addr.to_string() << " " << t.iface.mac.to_string() << " -> " << t.iface.subnet.to_string()
-                      << " (" << t.iface.subnet.host_count() << " адресов: " << t.iface.subnet.first_host().to_string() << " - "
-                      << t.iface.subnet.last_host().to_string() << ")\n";
+            auto const started = std::chrono::steady_clock::now();
+            auto const res = ArpScanner{t}.scan(std::chrono::milliseconds{cfg.arp_timeout_ms});
+            auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count();
+            std::cout << "== " << t.iface.name << " " << t.iface.subnet.to_string() << ": запросов " << res.sent << ", хостов " << res.hosts.size()
+                      << ", " << ms << " мс\n";
+            auto const conflicts = find_conflicts(res.hosts);
+            for (auto const &h : res.hosts) {
+                std::cout << "  " << h.ip.to_string() << "\t" << h.mac.to_string() << (conflicts.contains(h.ip) ? "\tКОНФЛИКТ IP" : "") << "\n";
+            }
         }
     } catch (std::exception const &ex) {
         std::cerr << "Ошибка во время выполнения: " << ex.what() << std::endl;

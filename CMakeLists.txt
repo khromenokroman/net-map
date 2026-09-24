@@ -18,6 +18,8 @@ include(GNUInstallDirs)
 configure_file(Version.in Version @ONLY)
 
 add_library(${PROJECT_NAME}-core STATIC
+        src/arp_packet.cpp
+        src/arp_scanner.cpp
         src/config.cpp
         src/ipv4.cpp
         src/netif.cpp
@@ -35,6 +37,7 @@ if (BUILD_TESTS)
     enable_testing()
     find_package(GTest REQUIRED)
     add_executable(${PROJECT_NAME}-tests
+            tests/arp_test.cpp
             tests/config_test.cpp
             tests/ipv4_test.cpp
             tests/netif_test.cpp
@@ -42,4 +45,6 @@ if (BUILD_TESTS)
     target_link_libraries(${PROJECT_NAME}-tests PRIVATE ${PROJECT_NAME}-core GTest::gtest_main)
     include(GoogleTest)
     gtest_discover_tests(${PROJECT_NAME}-tests)
+    add_test(NAME netns_scan COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/netns_scan.sh $<TARGET_FILE:${PROJECT_NAME}>)
+    set_tests_properties(netns_scan PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
 endif ()
