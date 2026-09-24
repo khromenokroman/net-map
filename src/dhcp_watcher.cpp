@@ -70,6 +70,7 @@ void DhcpWatcher::stop() {
 void DhcpWatcher::set_interfaces(std::vector<NetInterface> const &ifaces) {
     std::lock_guard const lock{m_mutex};
     m_wanted = ifaces;
+    m_resync = true;
 }
 
 std::vector<std::string> DhcpWatcher::sync_listeners() {
@@ -158,7 +159,7 @@ void DhcpWatcher::run(std::stop_token const &st) {
     auto next_sync = std::chrono::steady_clock::now();
     while (!st.stop_requested()) {
         auto const now = std::chrono::steady_clock::now();
-        if (now >= next_sync) {
+        if (now >= next_sync || m_resync.exchange(false)) {
             auto warnings = sync_listeners();
             if (warnings != last_warnings) {
                 for (auto const &w : warnings) {

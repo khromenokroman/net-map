@@ -34,7 +34,8 @@ h2 { font-size: 16px; margin: 28px 0 12px; font-weight: 650; }
 .conn { margin-left: auto; display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 13px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
 .conn.lost .dot { background: var(--fail); } .conn.lost { color: var(--fail); }
-.summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.summary { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 20px; }
+.tile.dhcp-bad .n { color: var(--fail); }
 .tile { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 14px 16px; box-shadow: var(--shadow); }
 .tile .n { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
 .tile .l { color: var(--muted); font-size: 13px; }
@@ -42,6 +43,7 @@ h2 { font-size: 16px; margin: 28px 0 12px; font-weight: 650; }
 .warnings { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; }
 .warnings:empty { display: none; }
 .group { margin-bottom: 16px; }
+#dhcp-group { margin-top: 28px; }
 .group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; width: 100%; padding: 10px 14px;
   background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--c, var(--accent)); border-radius: 12px;
   box-shadow: var(--shadow); color: inherit; font: inherit; cursor: pointer; text-align: left; }
@@ -104,9 +106,18 @@ td.muted { color: var(--muted); }
 .ev time { flex: none; color: var(--muted); font-variant-numeric: tabular-nums; width: 118px; }
 .ev.warn { color: var(--warn); } .ev.fail { color: var(--fail); } .ev.ok { color: var(--ok); }
 .empty { color: var(--muted); padding: 24px; text-align: center; }
+.dstatus { display: flex; flex-wrap: wrap; gap: 4px 18px; color: var(--muted); font-size: 13px; margin: 12px 2px; }
+.dstatus b { color: var(--text); font-weight: 600; }
+.alerts { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.alert { background: var(--fail-bg); color: var(--fail); border-radius: 10px; padding: 10px 14px; font-size: 13px; overflow-wrap: anywhere; }
+.alert.warn { background: var(--warn-bg); color: var(--warn); }
+.subh { font-size: 13px; font-weight: 600; color: var(--muted); margin: 16px 2px 8px; text-transform: uppercase; letter-spacing: .04em; }
+tr.bad td { background: var(--warn-bg); }
+td.cid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; }
 footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: center; }
 @media (max-width: 640px) {
   .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary .tile:last-child { grid-column: 1 / -1; }
   .ev { flex-direction: column; gap: 2px; }
 }
 </style>
@@ -123,6 +134,7 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
     <div class="tile off"><div class="n" id="n-offline">–</div><div class="l">Не отвечают</div></div>
     <div class="tile fail"><div class="n" id="n-conflict">–</div><div class="l">Конфликты IP</div></div>
     <div class="tile"><div class="n" id="n-subnets">–</div><div class="l">Подсети</div></div>
+    <div class="tile" id="t-dhcp"><div class="n" id="n-dhcp">–</div><div class="l">DHCP-серверы</div></div>
   </div>
   <div class="warnings" id="warnings"></div>
   <div id="maps"></div>
@@ -146,6 +158,13 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
       <tbody id="tbody"></tbody>
     </table>
   </div>
+
+  <section class="group" id="dhcp-group">
+    <button class="group-head" id="dhcp-head" type="button">
+      <span class="chev">&#9662;</span><span class="gt">DHCP</span><span class="gs" id="dhcp-pills"></span>
+    </button>
+    <div class="gbody" id="dhcp"></div>
+  </section>
 
   <h2>События</h2>
   <div class="events" id="events"></div>
@@ -178,8 +197,11 @@ function clock(ms) {
   return d.toLocaleDateString("ru-RU", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("ru-RU");
 }
 
+const displayName = h => h.hostname || h.dhcp_hostname || "";
+
 function hostTitle(h) {
-  return [h.ip + "  " + h.mac, h.hostname, vendorText(h), STATUS_TEXT[status(h)] + (h.self ? " · эта машина" : "") + (h.gateway ? " · шлюз" : ""),
+  return [h.ip + "  " + h.mac, h.hostname, h.dhcp_hostname && h.dhcp_hostname !== h.hostname ? "DHCP: " + h.dhcp_hostname : "",
+          h.client_id ? "Client-ID: " + h.client_id : "", vendorText(h), STATUS_TEXT[status(h)] + (h.self ? " · эта машина" : "") + (h.gateway ? " · шлюз" : ""),
           "Последний ответ: " + ago(h.last_seen)].filter(Boolean).join("\n");
 }
 
@@ -233,8 +255,8 @@ function drawMap(subnet, hosts) {
       const x = rg.r * Math.cos(a), y = rg.r * Math.sin(a);
       links.append(sv("line", { x1: 0, y1: 0, x2: x.toFixed(1), y2: y.toFixed(1) }, "link" + (h.conflict ? " fail" : "")));
       const cls = status(h) + (h.self ? " self" : "");
-      const main = h.hostname || h.vendor || "";
-      const sub = h.conflict ? "конфликт IP" : h.self ? "эта машина" : h.hostname ? h.vendor || (h.local_mac ? "лок. MAC" : "") : h.local_mac ? "лок. MAC" : "";
+      const name = displayName(h), main = name || h.vendor || "";
+      const sub = h.conflict ? "конфликт IP" : h.self ? "эта машина" : name ? h.vendor || (h.local_mac ? "лок. MAC" : "") : h.local_mac ? "лок. MAC" : "";
       node(nodes, x, y, 16, cls, "." + h.ip.split(".")[3], short(main, 18), short(sub, 20), hostTitle(h), () => select(h));
     });
   });
@@ -308,10 +330,17 @@ function select(h) {
   if (row) row.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+function nameCell(h) {
+  const td = el("td", displayName(h) ? "" : "muted", displayName(h) || "—");
+  if (!h.hostname && h.dhcp_hostname) td.append(el("span", "tag", "DHCP"));
+  return td;
+}
+
 function sortValue(h, k) {
   if (k === "ip") return ipNum(h.ip);
   if (k === "status") return { fail: 0, ok: 1, off: 2 }[status(h)];
   if (k === "vendor") return vendorText(h).toLowerCase();
+  if (k === "hostname") return displayName(h).toLowerCase();
   if (k === "last_seen" || k === "first_seen") return h[k];
   return String(h[k] || "").toLowerCase();
 }
@@ -320,7 +349,7 @@ function renderTable() {
   const q = $("search").value.trim().toLowerCase();
   const rows = data.hosts.filter(h =>
     (filter === "all" || (filter === "online" && h.online) || (filter === "offline" && !h.online) || (filter === "conflict" && h.conflict)) &&
-    (!q || [h.ip, h.mac, h.hostname, vendorText(h), h.iface].some(v => v.toLowerCase().includes(q))));
+    (!q || [h.ip, h.mac, h.hostname, h.dhcp_hostname, h.client_id, vendorText(h), h.iface].some(v => v.toLowerCase().includes(q))));
   rows.sort((a, b) => {
     const x = sortValue(a, sortKey), y = sortValue(b, sortKey);
     const r = x < y ? -1 : x > y ? 1 : ipNum(a.ip) - ipNum(b.ip);
@@ -333,7 +362,7 @@ function renderTable() {
     const ipc = el("td", "mono", h.ip);
     if (h.self) ipc.append(el("span", "tag", "эта машина"));
     if (h.gateway) ipc.append(el("span", "tag", "шлюз"));
-    tr.append(stc, ipc, el("td", "mono", h.mac), el("td", h.vendor ? "" : "muted", vendorText(h) || "—"), el("td", "", h.hostname || "—"),
+    tr.append(stc, ipc, el("td", "mono", h.mac), el("td", h.vendor ? "" : "muted", vendorText(h) || "—"), nameCell(h),
               el("td", "mono", h.iface), el("td", "muted", h.self ? "—" : ago(h.last_seen)), el("td", "muted", ago(h.first_seen)));
     tr.title = hostTitle(h);
     return tr;
@@ -341,7 +370,71 @@ function renderTable() {
   if (!rows.length) { const tr = el("tr"), td = el("td", "empty", "Нет хостов, подходящих под фильтр"); td.colSpan = 8; tr.append(td); tb.append(tr); }
 }
 
-const EV_CLASS = { ip_conflict: "fail", mac_changed: "warn", host_lost: "", host_back: "ok", new_host: "", conflict_resolved: "ok" };
+const EV_CLASS = { ip_conflict: "fail", mac_changed: "warn", host_lost: "", host_back: "ok", new_host: "", conflict_resolved: "ok",
+                   dhcp_server: "", dhcp_multiple_servers: "fail", dhcp_shared_client_id: "warn" };
+
+function table(headers, rows) {
+  const wrap = el("div", "tablewrap"), t = el("table"), head = el("tr");
+  for (const h of headers) head.append(el("th", "", h));
+  const thead = el("thead"); thead.append(head);
+  const tb = el("tbody"); tb.append(...rows);
+  t.append(thead, tb); wrap.append(t);
+  return wrap;
+}
+
+function serversBySegment(d) {
+  const seg = {};
+  for (const s of d.servers) (seg[s.iface] = seg[s.iface] || []).push(s);
+  return seg;
+}
+
+function renderDhcp() {
+  const d = data.dhcp, box = $("dhcp");
+  const seg = serversBySegment(d), multi = Object.entries(seg).filter(([, l]) => l.length > 1), shared = Object.entries(d.shared_client_ids);
+  $("n-dhcp").textContent = d.servers.length;
+  $("t-dhcp").classList.toggle("dhcp-bad", multi.length > 0);
+  const head = $("dhcp-head");
+  head.className = "group-head" + (multi.length ? " fail" : "");
+  const pills = [el("span", "pill ok", "серверов: " + d.servers.length), el("span", "pill off", "клиентов: " + d.clients.length)];
+  if (multi.length) pills.push(el("span", "pill fail", "несколько серверов"));
+  if (shared.length) pills.push(el("span", "pill fail", "общих Client-ID: " + shared.length));
+  $("dhcp-pills").replaceChildren(...pills);
+
+  const status = el("div", "dstatus");
+  const item = (k, v) => { const s = el("span"); s.append(k + " ", el("b", "", v)); return s; };
+  status.append(item("Прослушивание:", d.watching ? "идёт" : "выключено"),
+                item("Активный поиск серверов:", d.probing ? "включён" + (d.last_probe ? ", последний " + ago(d.last_probe) : "") : "выключен"));
+
+  const alerts = el("div", "alerts");
+  for (const [iface, list] of multi)
+    alerts.append(el("div", "alert", "⚠ В сегменте " + iface + " отвечают несколько DHCP-серверов: " + list.map(s => s.ip + " (" + s.mac + (s.vendor ? ", " + s.vendor : "") + ")").join(", ")));
+  for (const [id, macs] of shared)
+    alerts.append(el("div", "alert warn", "⚠ Client-ID " + id + " используют несколько MAC: " + macs.join(", ") +
+                     ". DHCP-сервер считает такие узлы одним клиентом и может выдать им один адрес (часто это клоны с одинаковым /etc/machine-id)."));
+
+  const srows = d.servers.map(s => {
+    const tr = el("tr", multi.some(([i]) => i === s.iface) ? "bad" : "");
+    tr.append(el("td", "mono", s.ip), el("td", "mono", s.mac), el("td", s.vendor ? "" : "muted", s.vendor || "—"), el("td", "mono", s.iface),
+              el("td", "mono", s.router || "—"), el("td", "", s.lease ? Math.round(s.lease / 60) + " мин" : "—"),
+              el("td", "mono", s.last_offered || "—"), el("td", "", s.answered_probe ? "да" : "—"), el("td", "muted", ago(s.last_seen)));
+    return tr;
+  });
+  const crows = d.clients.slice().sort((a, b) => b.last_seen - a.last_seen).map(c => {
+    const tr = el("tr", c.shared_client_id ? "bad" : "");
+    const cid = el("td", "cid", c.client_id || "—"); cid.title = c.client_id;
+    tr.append(el("td", "mono", c.mac), cid, el("td", c.hostname ? "" : "muted", c.hostname || "—"), el("td", "mono", c.requested_ip || "—"),
+              el("td", "mono", c.server_id || "—"), el("td", "", c.last_type), el("td", "muted", ago(c.last_seen)));
+    return tr;
+  });
+
+  const parts = [status, alerts, el("div", "subh", "Серверы")];
+  parts.push(srows.length ? table(["IP", "MAC", "Производитель", "Интерфейс", "Шлюз", "Аренда", "Выдал", "Ответил на поиск", "Последний ответ"], srows)
+                          : el("div", "empty", d.probing ? "DHCP-серверы не ответили" : "Серверы не замечены. Их ответы обычно адресные и не видны; включите dhcp_probe для активного поиска"));
+  parts.push(el("div", "subh", "Клиенты"));
+  parts.push(crows.length ? table(["MAC", "Client-ID", "Имя", "Запрошенный адрес", "Сервер", "Сообщение", "Замечен"], crows)
+                          : el("div", "empty", "DHCP-запросы клиентов пока не замечены"));
+  box.replaceChildren(...parts);
+}
 function renderEvents() {
   const list = data.events.slice().reverse().map(e => {
     const r = el("div", "ev " + (EV_CLASS[e.kind] || ""));
@@ -364,6 +457,7 @@ function render() {
   document.title = (conflicts ? "(" + conflicts + " конфл.) " : "") + "Карта сети — " + data.hostname;
   renderMaps();
   renderTable();
+  renderDhcp();
   renderEvents();
 }
 
@@ -401,6 +495,11 @@ for (const th of document.querySelectorAll("#thead th")) {
     if (data) renderTable();
   });
 }
+$("dhcp-head").addEventListener("click", () => {
+  const on = $("dhcp-group").classList.toggle("collapsed");
+  try { localStorage.setItem("netmap-dhcp-collapsed", on ? "1" : "0"); } catch (e) {}
+});
+try { if (localStorage.getItem("netmap-dhcp-collapsed") === "1") $("dhcp-group").classList.add("collapsed"); } catch (e) {}
 $("search").addEventListener("input", () => { selected = ""; if (data) renderTable(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 refresh();

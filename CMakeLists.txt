@@ -66,6 +66,8 @@ if (BUILD_TESTS)
     gtest_discover_tests(${PROJECT_NAME}-tests)
     add_test(NAME netns_scan COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/netns_scan.sh $<TARGET_FILE:${PROJECT_NAME}>)
     set_tests_properties(netns_scan PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 60)
+    add_test(NAME netns_dhcp COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/netns_dhcp.sh $<TARGET_FILE:${PROJECT_NAME}>)
+    set_tests_properties(netns_dhcp PROPERTIES SKIP_RETURN_CODE 77 TIMEOUT 90)
 endif ()
 
 install(TARGETS ${PROJECT_NAME}

@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <chrono>
 #include <functional>
 #include <map>
@@ -91,12 +92,13 @@ class DhcpWatcher {
 
     DhcpInventory m_inventory;                           // 104
     std::map<int, Listener> m_listeners;                 // 48
-    std::function<void(std::vector<Event>)> m_on_events; // 32
     mutable std::mutex m_mutex;                          // 40
+    std::function<void(std::vector<Event>)> m_on_events; // 32
     std::vector<NetInterface> m_wanted;                  // 24
     std::jthread m_thread;                               // 16
     std::chrono::seconds m_probe_interval;               // 8
     std::chrono::system_clock::time_point m_last_probe;  // 8
     std::chrono::steady_clock::time_point m_next_probe;  // 8
+    std::atomic_bool m_resync{false};                    // 1
     bool m_probe;                                        // 1
 };
