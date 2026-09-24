@@ -43,7 +43,16 @@ h2 { font-size: 16px; margin: 28px 0 12px; font-weight: 650; }
 .warnings { background: var(--warn-bg); color: var(--warn); border-radius: 10px; padding: 10px 14px; margin-bottom: 16px; font-size: 13px; }
 .warnings:empty { display: none; }
 .group { margin-bottom: 16px; }
-#dhcp-group { margin-top: 28px; }
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin: 0 0 16px; }
+.tab { position: relative; padding: 10px 16px; border: none; background: none; color: var(--muted); font: inherit; font-size: 15px;
+  font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; display: flex; align-items: center; gap: 8px; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.tab .badge { font-size: 11px; font-weight: 700; padding: 1px 7px; border-radius: 999px; color: var(--muted); background: var(--off-bg); }
+.tab .badge.fail { color: var(--fail); background: var(--fail-bg); }
+.tabpane[hidden] { display: none; }
+.tile.link { cursor: pointer; }
+.tile.link:hover { border-color: var(--accent); }
 .group-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; width: 100%; padding: 10px 14px;
   background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--c, var(--accent)); border-radius: 12px;
   box-shadow: var(--shadow); color: inherit; font: inherit; cursor: pointer; text-align: left; }
@@ -134,9 +143,16 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
     <div class="tile off"><div class="n" id="n-offline">–</div><div class="l">Не отвечают</div></div>
     <div class="tile fail"><div class="n" id="n-conflict">–</div><div class="l">Конфликты IP</div></div>
     <div class="tile"><div class="n" id="n-subnets">–</div><div class="l">Подсети</div></div>
-    <div class="tile" id="t-dhcp"><div class="n" id="n-dhcp">–</div><div class="l">DHCP-серверы</div></div>
+    <div class="tile link" id="t-dhcp" title="Открыть вкладку DHCP"><div class="n" id="n-dhcp">–</div><div class="l">DHCP-серверы</div></div>
   </div>
   <div class="warnings" id="warnings"></div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" type="button" role="tab" data-tab="net">Карта и хосты</button>
+    <button class="tab" type="button" role="tab" data-tab="dhcp">DHCP <span class="badge" id="dhcp-badge">0</span></button>
+  </nav>
+
+  <div class="tabpane" id="tab-net">
   <div id="maps"></div>
 
   <h2>Хосты</h2>
@@ -159,15 +175,14 @@ footer { margin-top: 24px; color: var(--muted); font-size: 12px; text-align: cen
     </table>
   </div>
 
-  <section class="group" id="dhcp-group">
-    <button class="group-head" id="dhcp-head" type="button">
-      <span class="chev">&#9662;</span><span class="gt">DHCP</span><span class="gs" id="dhcp-pills"></span>
-    </button>
-    <div class="gbody" id="dhcp"></div>
-  </section>
-
   <h2>События</h2>
   <div class="events" id="events"></div>
+  </div>
+
+  <div class="tabpane" id="tab-dhcp" hidden>
+    <div id="dhcp-pills" class="gs" style="justify-content: flex-start; margin: 0 2px"></div>
+    <div id="dhcp"></div>
+  </div>
   <footer id="footer"></footer>
 </div>
 <script>
@@ -275,9 +290,17 @@ const collapsed = new Set();
 try { for (const k of JSON.parse(localStorage.getItem("netmap-collapsed") || "[]")) collapsed.add(k); } catch (e) {}
 const saveCollapsed = () => { try { localStorage.setItem("netmap-collapsed", JSON.stringify([...collapsed])); } catch (e) {} };
 
+const mapScroll = {};
+function centerMaps() {
+  for (const sc of document.querySelectorAll(".map .scroll")) {
+    if (!sc.clientWidth) continue;
+    const saved = mapScroll[sc.dataset.key];
+    if (saved) [sc.scrollLeft, sc.scrollTop] = saved;
+    else { sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2; }
+  }
+}
+
 function renderMaps() {
-  const scrolls = {};
-  for (const sc of document.querySelectorAll(".map .scroll")) scrolls[sc.dataset.key] = [sc.scrollLeft, sc.scrollTop];
   const out = [];
   for (const s of data.subnets) {
     const hosts = data.hosts.filter(h => h.subnet === s.subnet && h.iface === s.iface);
@@ -298,6 +321,7 @@ function renderMaps() {
     });
     const body = el("div", "gbody"), map = el("div", "map"), scroll = el("div", "scroll");
     scroll.dataset.key = key;
+    scroll.addEventListener("scroll", () => { if (scroll.clientWidth) mapScroll[key] = [scroll.scrollLeft, scroll.scrollTop]; });
     scroll.append(drawMap(s, hosts));
     map.append(scroll);
     const lg = el("div", "legend");
@@ -312,11 +336,7 @@ function renderMaps() {
     out.push(sec);
   }
   $("maps").replaceChildren(...out);
-  for (const sc of document.querySelectorAll(".map .scroll")) {
-    const saved = scrolls[sc.dataset.key];
-    if (saved) [sc.scrollLeft, sc.scrollTop] = saved;
-    else { sc.scrollLeft = (sc.scrollWidth - sc.clientWidth) / 2; sc.scrollTop = (sc.scrollHeight - sc.clientHeight) / 2; }
-  }
+  centerMaps();
   if (!out.length) $("maps").append(el("div", "empty", data.scans ? "Нет подсетей для сканирования" : "Идёт первое сканирование…"));
 }
 
@@ -393,8 +413,10 @@ function renderDhcp() {
   const seg = serversBySegment(d), multi = Object.entries(seg).filter(([, l]) => l.length > 1), shared = Object.entries(d.shared_client_ids);
   $("n-dhcp").textContent = d.servers.length;
   $("t-dhcp").classList.toggle("dhcp-bad", multi.length > 0);
-  const head = $("dhcp-head");
-  head.className = "group-head" + (multi.length ? " fail" : "");
+  const problems = multi.length + shared.length, badge = $("dhcp-badge");
+  badge.textContent = problems ? "⚠ " + problems : d.servers.length + " / " + d.clients.length;
+  badge.className = "badge" + (problems ? " fail" : "");
+  badge.title = problems ? "Есть предупреждения DHCP" : "серверов / клиентов";
   const pills = [el("span", "pill ok", "серверов: " + d.servers.length), el("span", "pill off", "клиентов: " + d.clients.length)];
   if (multi.length) pills.push(el("span", "pill fail", "несколько серверов"));
   if (shared.length) pills.push(el("span", "pill fail", "общих Client-ID: " + shared.length));
@@ -495,11 +517,28 @@ for (const th of document.querySelectorAll("#thead th")) {
     if (data) renderTable();
   });
 }
-$("dhcp-head").addEventListener("click", () => {
-  const on = $("dhcp-group").classList.toggle("collapsed");
-  try { localStorage.setItem("netmap-dhcp-collapsed", on ? "1" : "0"); } catch (e) {}
-});
-try { if (localStorage.getItem("netmap-dhcp-collapsed") === "1") $("dhcp-group").classList.add("collapsed"); } catch (e) {}
+function showTab(name, remember) {
+  if (name !== "net" && name !== "dhcp") name = "net";
+  for (const t of document.querySelectorAll(".tab")) {
+    t.classList.toggle("active", t.dataset.tab === name);
+    t.setAttribute("aria-selected", String(t.dataset.tab === name));
+  }
+  $("tab-net").hidden = name !== "net";
+  $("tab-dhcp").hidden = name !== "dhcp";
+  if (name === "net") centerMaps();
+  if (remember) {
+    history.replaceState(null, "", name === "net" ? location.pathname : "#" + name);
+    try { localStorage.setItem("netmap-tab", name); } catch (e) {}
+  }
+}
+for (const t of document.querySelectorAll(".tab")) t.addEventListener("click", () => showTab(t.dataset.tab, true));
+$("t-dhcp").addEventListener("click", () => showTab("dhcp", true));
+window.addEventListener("hashchange", () => showTab(location.hash.slice(1), false));
+{
+  let tab = location.hash.slice(1);
+  if (!tab) { try { tab = localStorage.getItem("netmap-tab") || "net"; } catch (e) { tab = "net"; } }
+  showTab(tab, false);
+}
 $("search").addEventListener("input", () => { selected = ""; if (data) renderTable(); });
 document.addEventListener("visibilitychange", () => { if (!document.hidden) refresh(); });
 refresh();
