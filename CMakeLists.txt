@@ -25,6 +25,7 @@ add_library(${PROJECT_NAME}-core STATIC
         src/arp_packet.cpp
         src/arp_scanner.cpp
         src/config.cpp
+        src/dhcp_packet.cpp
         src/index_page.cpp
         src/ipv4.cpp
         src/inventory.cpp
@@ -50,12 +51,14 @@ if (BUILD_TESTS)
             tests/api_test.cpp
             tests/arp_test.cpp
             tests/config_test.cpp
+            tests/dhcp_packet_test.cpp
             tests/inventory_test.cpp
             tests/ipv4_test.cpp
             tests/netif_test.cpp
             tests/oui_route_test.cpp
     )
     target_link_libraries(${PROJECT_NAME}-tests PRIVATE ${PROJECT_NAME}-core GTest::gtest_main)
+    target_compile_definitions(${PROJECT_NAME}-tests PRIVATE TEST_DATA_DIR="${CMAKE_SOURCE_DIR}/tests/data")
     include(GoogleTest)
     gtest_discover_tests(${PROJECT_NAME}-tests)
     add_test(NAME netns_scan COMMAND ${CMAKE_SOURCE_DIR}/tests/integration/netns_scan.sh $<TARGET_FILE:${PROJECT_NAME}>)
